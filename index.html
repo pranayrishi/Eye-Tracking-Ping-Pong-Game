@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EyePong - Professional Eye-Tracking Pong</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Orbitron', monospace;
+            background: linear-gradient(135deg, #0f0f23, #1a1a2e, #16213e);
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .menu-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 0.5s ease;
+        }
+        
+        .game-title {
+            font-size: 4rem;
+            font-weight: 900;
+            background: linear-gradient(45deg, #00f5ff, #ff006e, #8338ec);
+            background-size: 400% 400%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientShift 3s ease-in-out infinite;
+            margin-bottom: 2rem;
+            text-shadow: 0 0 30px rgba(0, 245, 255, 0.5);
+        }
+        
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        .menu-button {
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            font-weight: 700;
+            background: linear-gradient(45deg, #8338ec, #3a86ff);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            cursor: pointer;
+            margin: 10px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            box-shadow: 0 4px 15px rgba(131, 56, 236, 0.4);
+        }
+        
+        .menu-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 25px rgba(131, 56, 236, 0.6);
+            background: linear-gradient(45deg, #3a86ff, #8338ec);
+        }
+        
+        .calibration-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+        }
+        
+        .calibration-dot {
+            width: 20px;
+            height: 20px;
+            background: #ff006e;
+            border-radius: 50%;
+            box-shadow: 0 0 20px #ff006e;
+            animation: pulse 1s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.7; }
+        }
+        
+        .game-canvas {
+            background: linear-gradient(180deg, #0f0f23, #1a1a2e);
+            border: 3px solid #8338ec;
+            border-radius: 10px;
+            box-shadow: 0 0 50px rgba(131, 56, 236, 0.3);
+            position: relative;
+        }
+        
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 50px;
+            font-size: 2rem;
+            font-weight: 700;
+            z-index: 100;
+        }
+        
+        .player-score, .ai-score {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 10px;
+            border: 2px solid #8338ec;
+        }
+        
+        .player-score {
+            color: #00f5ff;
+            text-shadow: 0 0 10px #00f5ff;
+        }
+        
+        .ai-score {
+            color: #ff006e;
+            text-shadow: 0 0 10px #ff006e;
+        }
+        
+        .eye-tracking-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #ff006e;
+            box-shadow: 0 0 15px #ff006e;
+            z-index: 100;
+        }
+        
+        .eye-tracking-indicator.active {
+            background: #00ff00;
+            box-shadow: 0 0 15px #00ff00;
+        }
+        
+        .camera-view {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 160px;
+            height: 120px;
+            border: 2px solid #8338ec;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 100;
+            opacity: 0.8;
+        }
+        
+        .camera-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        
+        .instructions {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            font-size: 1rem;
+            opacity: 0.8;
+            z-index: 100;
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1001;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(131, 56, 236, 0.3);
+            border-top: 3px solid #8338ec;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            border-radius: 50%;
+            opacity: 0;
+            animation: particleFloat 2s ease-out forwards;
+        }
+        
+        @keyframes particleFloat {
+            0% {
+                opacity: 1;
+                transform: scale(0) translateY(0);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(1) translateY(-100px);
+            }
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <!-- Loading Screen -->
+        <div class="loading-overlay" id="loadingScreen">
+            <div class="loading-spinner"></div>
+            <h2>Initializing Eye Tracking...</h2>
+            <p id="loadingText">Please allow camera access</p>
+            <button class="menu-button" onclick="useSimplifiedTracking()" style="margin-top: 2rem;">
+                Skip Eye Tracking (Use Mouse/Keyboard)
+            </button>
+        </div>
+        
+        <!-- Main Menu -->
+        <div class="menu-screen" id="menuScreen">
+            <h1 class="game-title">EYEPONG</h1>
+            <p style="font-size: 1.2rem; margin-bottom: 2rem; text-align: center;">
+                Professional Eye-Tracking Pong Experience
+            </p>
+            <button class="menu-button" onclick="startCalibration()">Start Game</button>
+            <button class="menu-button" onclick="showInstructions()">How to Play</button>
+        </div>
+        
+        <!-- Calibration Screen -->
+        <div class="calibration-screen" id="calibrationScreen">
+            <h2 style="margin-bottom: 2rem;">Eye Tracking Calibration</h2>
+            <p style="margin-bottom: 2rem; text-align: center;">
+                Look at the dot and follow it with your eyes<br>
+                Keep your head still and centered
+            </p>
+            <div class="calibration-dot" id="calibrationDot"></div>
+            <p style="margin-top: 2rem;" id="calibrationProgress">Position 1 of 5</p>
+        </div>
+        
+        <!-- Game Canvas -->
+        <canvas class="game-canvas" id="gameCanvas" width="1000" height="600"></canvas>
+        
+        <!-- HUD -->
+        <div class="hud">
+            <div class="player-score">Player: <span id="playerScore">0</span></div>
+            <div class="ai-score">AI: <span id="aiScore">0</span></div>
+        </div>
+        
+        <!-- Eye Tracking Indicator -->
+        <div class="eye-tracking-indicator" id="eyeIndicator"></div>
+        
+        <!-- Camera View -->
+        <div class="camera-view">
+            <video class="camera-video" id="cameraVideo" autoplay muted></video>
+        </div>
+        
+        <!-- Instructions -->
+        <div class="instructions">
+            <p>Move your eyes up and down to control your paddle</p>
+            <p>First to 7 points wins!</p>
+        </div>
+        
+        <!-- Hidden video for MediaPipe -->
+        <video id="hiddenVideo" style="display: none;" autoplay muted></video>
+    </div>
+
+    <script>
+        // Game State
+        const gameState = {
+            current: 'loading', // loading, menu, calibrating, playing, paused, gameOver
+            playerScore: 0,
+            aiScore: 0,
+            eyeTrackingActive: false,
+            calibrationData: [],
+            calibrationStep: 0
+        };
+        
+        // Game Objects
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const game = {
+            ball: {
+                x: canvas.width / 2,
+                y: canvas.height / 2,
+                dx: 5,
+                dy: 3,
+                radius: 8,
+                trail: []
+            },
+            playerPaddle: {
+                x: 20,
+                y: canvas.height / 2 - 60,
+                width: 12,
+                height: 120,
+                speed: 6,
+                targetY: canvas.height / 2 - 60
+            },
+            aiPaddle: {
+                x: canvas.width - 32,
+                y: canvas.height / 2 - 60,
+                width: 12,
+                height: 120,
+                speed: 4
+            },
+            particles: []
+        };
+        
+        // Eye Tracking Variables
+        let faceMesh, camera;
+        let eyeY = 0.5; // Normalized eye position (0-1)
+        const eyeYHistory = [];
+        const SMOOTHING_FACTOR = 0.15;
+        
+        // MediaPipe Setup
+        async function initializeEyeTracking() {
+            try {
+                const loadingText = document.getElementById('loadingText');
+                loadingText.textContent = 'Requesting camera access...';
+                
+                console.log('Starting camera initialization...');
+                
+                // First, get camera access
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: 640, 
+                        height: 480,
+                        facingMode: 'user'
+                    } 
+                });
+                
+                loadingText.textContent = 'Camera access granted, setting up video...';
+                console.log('Camera access granted');
+                
+                const video = document.getElementById('hiddenVideo');
+                const cameraVideo = document.getElementById('cameraVideo');
+                
+                video.srcObject = stream;
+                cameraVideo.srcObject = stream;
+                
+                // Wait for video to be ready
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        console.log('Video loaded');
+                        resolve();
+                    };
+                });
+                
+                loadingText.textContent = 'Loading MediaPipe face tracking...';
+                
+                // Check if MediaPipe is available
+                if (typeof FaceMesh === 'undefined') {
+                    console.log('MediaPipe not available, using simplified eye tracking');
+                    // Use simplified tracking without MediaPipe
+                    window.useSimplifiedTracking();
+                    return;
+                }
+                
+                // Initialize MediaPipe FaceMesh
+                console.log('Initializing MediaPipe...');
+                faceMesh = new FaceMesh({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                    }
+                });
+                
+                faceMesh.setOptions({
+                    maxNumFaces: 1,
+                    refineLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+                
+                faceMesh.onResults(onFaceMeshResults);
+                
+                if (typeof Camera !== 'undefined') {
+                    loadingText.textContent = 'Starting face tracking camera...';
+                    
+                    camera = new Camera(video, {
+                        onFrame: async () => {
+                            if (faceMesh) {
+                                await faceMesh.send({image: video});
+                            }
+                        },
+                        width: 640,
+                        height: 480
+                    });
+                    
+                    await camera.start();
+                    console.log('MediaPipe camera started');
+                } else {
+                    console.log('Camera utility not available, using simplified tracking');
+                    window.useSimplifiedTracking();
+                    return;
+                }
+                
+                document.getElementById('loadingScreen').classList.add('hidden');
+                gameState.current = 'menu';
+                console.log('Initialization complete');
+                
+            } catch (error) {
+                console.error('Error initializing eye tracking:', error);
+                document.getElementById('loadingText').textContent = 'Eye tracking failed, switching to mouse/keyboard controls...';
+                
+                // Fall back to simplified tracking after a short delay
+                setTimeout(() => {
+                    window.useSimplifiedTracking();
+                }, 2000);
+            }
+        }
+        
+        // Simplified eye tracking fallback
+        window.useSimplifiedTracking = function() {
+            console.log('Using simplified eye tracking');
+            
+            // Hide loading screen and show menu
+            document.getElementById('loadingScreen').classList.add('hidden');
+            gameState.current = 'menu';
+            
+            // Update loading text to show fallback mode
+            document.querySelector('.instructions p:first-child').textContent = 
+                'Use mouse movement or arrow keys to control your paddle';
+            
+            // Add mouse controls as fallback
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const mouseY = e.clientY - rect.top;
+                const paddleRange = canvas.height - game.playerPaddle.height;
+                game.playerPaddle.targetY = Math.max(0, Math.min(paddleRange, mouseY - game.playerPaddle.height / 2));
+                gameState.eyeTrackingActive = true;
+                document.getElementById('eyeIndicator').classList.add('active');
+            });
+            
+            // Add keyboard controls
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+                    game.playerPaddle.targetY = Math.max(0, game.playerPaddle.targetY - 20);
+                } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+                    game.playerPaddle.targetY = Math.min(canvas.height - game.playerPaddle.height, game.playerPaddle.targetY + 20);
+                }
+                gameState.eyeTrackingActive = true;
+                document.getElementById('eyeIndicator').classList.add('active');
+            });
+        }
+        
+        function onFaceMeshResults(results) {
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                const landmarks = results.multiFaceLandmarks[0];
+                
+                // Eye landmark indices for MediaPipe FaceMesh
+                const leftEye = landmarks[159]; // Left eye center
+                const rightEye = landmarks[386]; // Right eye center
+                
+                if (leftEye && rightEye) {
+                    // Calculate average eye Y position
+                    const avgEyeY = (leftEye.y + rightEye.y) / 2;
+                    
+                    // Smooth the eye tracking data
+                    eyeYHistory.push(avgEyeY);
+                    if (eyeYHistory.length > 5) {
+                        eyeYHistory.shift();
+                    }
+                    
+                    eyeY = eyeYHistory.reduce((a, b) => a + b, 0) / eyeYHistory.length;
+                    
+                    gameState.eyeTrackingActive = true;
+                    document.getElementById('eyeIndicator').classList.add('active');
+                    
+                    // Update paddle position based on eye Y
+                    const paddleRange = canvas.height - game.playerPaddle.height;
+                    const normalizedY = Math.max(0, Math.min(1, (eyeY - 0.3) / 0.4)); // Adjust sensitivity
+                    game.playerPaddle.targetY = normalizedY * paddleRange;
+                }
+            } else {
+                gameState.eyeTrackingActive = false;
+                document.getElementById('eyeIndicator').classList.remove('active');
+            }
+        }
+        
+        // Calibration System
+        function startCalibration() {
+            // Skip calibration if using simplified tracking
+            if (typeof FaceMesh === 'undefined' || !faceMesh) {
+                startGame();
+                return;
+            }
+            
+            gameState.current = 'calibrating';
+            gameState.calibrationStep = 0;
+            gameState.calibrationData = [];
+            
+            document.getElementById('menuScreen').classList.add('hidden');
+            document.getElementById('calibrationScreen').style.display = 'flex';
+            
+            runCalibrationStep();
+        }
+        
+        function runCalibrationStep() {
+            const positions = [
+                { x: '20%', y: '20%' },
+                { x: '80%', y: '20%' },
+                { x: '50%', y: '50%' },
+                { x: '20%', y: '80%' },
+                { x: '80%', y: '80%' }
+            ];
+            
+            if (gameState.calibrationStep < positions.length) {
+                const pos = positions[gameState.calibrationStep];
+                const dot = document.getElementById('calibrationDot');
+                const progress = document.getElementById('calibrationProgress');
+                
+                dot.style.left = pos.x;
+                dot.style.top = pos.y;
+                progress.textContent = `Position ${gameState.calibrationStep + 1} of ${positions.length}`;
+                
+                setTimeout(() => {
+                    gameState.calibrationData.push({
+                        position: pos,
+                        eyeY: eyeY
+                    });
+                    
+                    gameState.calibrationStep++;
+                    
+                    if (gameState.calibrationStep < positions.length) {
+                        runCalibrationStep();
+                    } else {
+                        finishCalibration();
+                    }
+                }, 2000);
+            }
+        }
+        
+        function finishCalibration() {
+            document.getElementById('calibrationScreen').style.display = 'none';
+            startGame();
+        }
+        
+        // Game Logic
+        function startGame() {
+            gameState.current = 'playing';
+            gameState.playerScore = 0;
+            gameState.aiScore = 0;
+            
+            resetBall();
+            gameLoop();
+        }
+        
+        function resetBall() {
+            game.ball.x = canvas.width / 2;
+            game.ball.y = canvas.height / 2;
+            game.ball.dx = (Math.random() > 0.5 ? 5 : -5);
+            game.ball.dy = (Math.random() - 0.5) * 6;
+            game.ball.trail = [];
+        }
+        
+        function updateGame() {
+            if (gameState.current !== 'playing') return;
+            
+            // Update player paddle with smooth interpolation
+            const targetDiff = game.playerPaddle.targetY - game.playerPaddle.y;
+            game.playerPaddle.y += targetDiff * SMOOTHING_FACTOR;
+            
+            // Update AI paddle
+            const aiTarget = game.ball.y - game.aiPaddle.height / 2;
+            const aiDiff = aiTarget - game.aiPaddle.y;
+            game.aiPaddle.y += Math.sign(aiDiff) * Math.min(Math.abs(aiDiff), game.aiPaddle.speed);
+            
+            // Keep paddles in bounds
+            game.playerPaddle.y = Math.max(0, Math.min(canvas.height - game.playerPaddle.height, game.playerPaddle.y));
+            game.aiPaddle.y = Math.max(0, Math.min(canvas.height - game.aiPaddle.height, game.aiPaddle.y));
+            
+            // Update ball
+            game.ball.x += game.ball.dx;
+            game.ball.y += game.ball.dy;
+            
+            // Ball trail effect
+            game.ball.trail.push({ x: game.ball.x, y: game.ball.y });
+            if (game.ball.trail.length > 10) {
+                game.ball.trail.shift();
+            }
+            
+            // Ball collision with top/bottom walls
+            if (game.ball.y <= game.ball.radius || game.ball.y >= canvas.height - game.ball.radius) {
+                game.ball.dy = -game.ball.dy;
+                createParticles(game.ball.x, game.ball.y, '#8338ec');
+            }
+            
+            // Ball collision with paddles
+            if (ballPaddleCollision(game.ball, game.playerPaddle) || ballPaddleCollision(game.ball, game.aiPaddle)) {
+                game.ball.dx = -game.ball.dx * 1.05; // Slight speed increase
+                createParticles(game.ball.x, game.ball.y, '#00f5ff');
+            }
+            
+            // Scoring
+            if (game.ball.x < 0) {
+                gameState.aiScore++;
+                document.getElementById('aiScore').textContent = gameState.aiScore;
+                createParticles(canvas.width / 2, canvas.height / 2, '#ff006e');
+                
+                if (gameState.aiScore >= 7) {
+                    endGame('AI Wins!');
+                } else {
+                    resetBall();
+                }
+            } else if (game.ball.x > canvas.width) {
+                gameState.playerScore++;
+                document.getElementById('playerScore').textContent = gameState.playerScore;
+                createParticles(canvas.width / 2, canvas.height / 2, '#00f5ff');
+                
+                if (gameState.playerScore >= 7) {
+                    endGame('You Win!');
+                } else {
+                    resetBall();
+                }
+            }
+            
+            // Update particles
+            game.particles = game.particles.filter(particle => {
+                particle.y -= particle.speed;
+                particle.opacity -= 0.02;
+                return particle.opacity > 0;
+            });
+        }
+        
+        function ballPaddleCollision(ball, paddle) {
+            return ball.x - ball.radius < paddle.x + paddle.width &&
+                   ball.x + ball.radius > paddle.x &&
+                   ball.y - ball.radius < paddle.y + paddle.height &&
+                   ball.y + ball.radius > paddle.y;
+        }
+        
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 8; i++) {
+                game.particles.push({
+                    x: x + (Math.random() - 0.5) * 20,
+                    y: y + (Math.random() - 0.5) * 20,
+                    speed: Math.random() * 3 + 1,
+                    opacity: 1,
+                    color: color
+                });
+            }
+        }
+        
+        function render() {
+            // Clear canvas with gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#0f0f23');
+            gradient.addColorStop(1, '#1a1a2e');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw center line
+            ctx.strokeStyle = 'rgba(131, 56, 236, 0.5)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([10, 10]);
+            ctx.beginPath();
+            ctx.moveTo(canvas.width / 2, 0);
+            ctx.lineTo(canvas.width / 2, canvas.height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            
+            // Draw paddles with glow
+            drawPaddle(game.playerPaddle, '#00f5ff');
+            drawPaddle(game.aiPaddle, '#ff006e');
+            
+            // Draw ball trail
+            game.ball.trail.forEach((point, index) => {
+                const alpha = index / game.ball.trail.length;
+                ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.5})`;
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, game.ball.radius * alpha, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Draw ball with glow
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(game.ball.x, game.ball.y, game.ball.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            
+            // Draw particles
+            game.particles.forEach(particle => {
+                ctx.fillStyle = particle.color.replace('rgb', 'rgba').replace(')', `, ${particle.opacity})`);
+                ctx.beginPath();
+                ctx.arc(particle.x, particle.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        
+        function drawPaddle(paddle, color) {
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 15;
+            ctx.fillStyle = color;
+            ctx.fillRect(paddle.x, paddle.y, paddle.width, paddle.height);
+            ctx.shadowBlur = 0;
+        }
+        
+        function gameLoop() {
+            if (gameState.current === 'playing') {
+                updateGame();
+                render();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+        
+        function endGame(message) {
+            gameState.current = 'gameOver';
+            setTimeout(() => {
+                alert(message);
+                gameState.current = 'menu';
+                document.getElementById('menuScreen').classList.remove('hidden');
+            }, 1000);
+        }
+        
+        function showInstructions() {
+            alert(`EyePong Instructions:
+
+1. Allow camera access when prompted
+2. Complete the eye tracking calibration
+3. Look up and down to control your paddle
+4. Keep your head centered and still
+5. First to 7 points wins!
+
+Eye tracking works best in good lighting with your face clearly visible to the camera.`);
+        }
+        
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add timeout to prevent infinite loading
+            setTimeout(() => {
+                if (gameState.current === 'loading') {
+                    console.log('Initialization timeout, using fallback');
+                    window.useSimplifiedTracking();
+                }
+            }, 10000); // 10 second timeout
+            
+            initializeEyeTracking();
+        });
+        
+        // Handle visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && gameState.current === 'playing') {
+                gameState.current = 'paused';
+            }
+        });
+        
+    </script>
+</body>
+</html>
